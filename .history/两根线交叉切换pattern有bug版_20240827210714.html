@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Switch map mode on the control panel</title>
+    <link rel="stylesheet" type="text/css" href="style2.1.css">
+</head>
+
+<body>
+    <div class="container">
+        <!-- SelectedProvince Text -->
+        <div id="centered-container">
+            <p id="selected-province-text">Now you are designing texture for <strong></strong></p>
+        </div>
+        <div class="row">
+            <div class="buttons">
+                <!-- Two Mode Button -->
+                <button id="colorMode">colorMode</button>
+                <button id="patternMode">patternMode</button>
+                <!-- Clear selectedProvince -->
+                <button id="clearChoice">Clear Choice</button>
+                <button id="backButton">返回</button>
+
+            </div>
+            <div id="map"></div>
+        </div>
+        <!-- Map container -->
+
+        <div class="row2">
+            <!-- Label scroll-list -->
+
+            <!-- <input type="range" min="0" max="360" value="0" step="1" id="SinglePatternRotation" /> -->
+            <div for="provinceList">Choose province:</div>
+            <div id="provinceList" class="scroll-list">
+                <ul>
+                    <!-- JavaScript: The list of provinces will be dynamically populated here -->
+                </ul>
+            </div>
+        </div>
+        <div class="row3">
+            <!-- Pattern options -->
+            <!-- 每个模式的value与对应的SVG纹理ID完全匹配 -->
+
+            <div id="pattern-options">
+
+                <div id="pattern-buttons">
+                    <div>Texture Type: </div>
+                    <label><input type="radio" name="ThreePattern" id="dots" value="dot"> Dot</label>
+                    <label><input type="radio" name="ThreePattern" id="lines" value="line"> Line</label>
+                    <label><input type="radio" name="ThreePattern" id="grids" value="grid"> Grid</label>
+                </div>
+
+            </div>
+
+            <!-- Hidden Options -->
+            <div id="AfterSelectedPattern-options" style="display: none;">
+                <div id="dot-options">
+                    <div>Primitive Type:</div>
+                    <label><input type="radio" name="primitivePattern" value="dot"> Dot</label>
+                    <label><input type="radio" name="primitivePattern" value="circle"> Circle</label>
+                </div>
+
+                <!-- <div id="grid-options">
+                    <div>Angle Between Two Lines:</div>
+                    <input type="range" min="0" max="180" value="0" step="1" id="GridAngleRotation" />
+                </div> -->
+            </div>
+
+            <label>Rotation: </label>
+            <input type="range" min="0" max="180" value="0" step="1" id="SinglePatternRotation" />
+
+
+
+            <label>
+
+            </label>
+        </div>
+
+    </div>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+
+    <script src="https://unpkg.com/topojson@3"></script>
+    <script src="texturePatten.js"></script>
+
+    <script>
+
+        // ProvinceName List
+        var provinceNames = ["Gansu", "Beijing", "Qinghai", "Guangxi", "Guizhou", "Chongqing", "Fujian", "Anhui", "Guangdong", "Xizang", "Xinjiang", "Hainan", "Ningxia", "Shaanxi", "Shanxi", "Hubei", "Hunan", "Sichuan", "Yunnan", "Hebei", "Henan", "Liaoning", "Shandong", "Tianjin", "Jiangxi", "Jiangsu", "Shanghai", "Zhejiang", "Jilin", "Inner Mongolia", "Heilongjiang", "Hong Kong", "Macao", "Taiwan"];
+        var ProvinceStrokeWidth = 1;
+        // Monitor the change of provinces and patterns
+        var previouslySelectedProvince = null; // 在全局范围内定义一个变量来存储当前选中的省份的元素
+        var selectedProvince = null; //Default Province
+        var selectedPattern = null; // Default Pattern
+
+        // Initialize the patternsMap
+        var patternsMap = {};
+        var PatternRotationValue = 0;
+
+
+
+
+        var svg; // 声明全局变量以存储SVG对象
+
+
+        // 获取SinglePatternRotation进度条的当前值
+        $(document).ready(function () {
+            // 监听进度条值的变化
+            $('#SinglePatternRotation').on('input', function () {
+                // 获取进度条的当前值
+                var PatternRotationValue = $(this).val();
+
+                // 可以在这里添加更多的操作，比如更新界面显示等
+                console.log('当前PatternRotationValue角度: ' + PatternRotationValue + '度');
+
+                rotateProvincePattern(PatternRotationValue); // 调用旋转函数
+            });
+        });
+
+
+
+
+        // 旋转图案的函数
+        function rotateProvincePattern(angle) {
+            console.log("Attempting to rotate pattern for province:", selectedProvince);
+
+            svg.selectAll(".provinces path")
+                .each(function (d) {
+                    // 仅对当前选择的省份执行操作
+                    if (d.properties.engName === selectedProvince) {
+                        // 获取该省份的图案 ID
+                        var patternId = getPatternIdByProvince(selectedProvince);
+                        if (patternId) {
+                            console.log("Found pattern ID:", patternId);
+                            // 安全地使用 ID 选择 pattern 元素
+                            var pattern = svg.select('pattern#' + patternId.replace(/([ #;?%&,.+*~\':"!^$[\]()=>|\/@])/g, '\\$1'));
+                            if (!pattern.empty()) {
+                                // 应用旋转变换
+                                pattern.attr("patternTransform", "rotate(" + angle + ")");
+                                console.log("Pattern rotated:", angle);
+                            } else {
+                                console.error("Pattern element not found for ID:", patternId);
+                            }
+                        } else {
+                            console.error("No pattern ID found for selected province");
+                        }
+                    }
+                });
+        }
+
+
+        var slider = document.getElementById("GridAngleRotation");
+        // 初始化或更新 pattern 中的两条线
+        function updatePatternLines(Gridangle) {
+            svg.selectAll(".provinces path")
+                .each(function (d) {
+                    if (d.properties.engName === selectedProvince) {
+                        var bounds = d3.geoBounds(d);  // 获取地理边界
+                        var topLeft = projection([bounds[0][0], bounds[1][1]]);
+                        var bottomRight = projection([bounds[1][0], bounds[0][1]]);
+
+                        var width = bottomRight[0] - topLeft[0];
+                        var height = bottomRight[1] - topLeft[1];
+
+                        var patternId = getPatternIdByProvince(selectedProvince);
+                        if (patternId) {
+                            var pattern = svg.select('pattern#' + patternId.replace(/([ #;?%&,.+*~\':"!^$[\]()=>|\/@])/g, '\\$1'));
+                            pattern.selectAll("*").remove();
+
+                            // 设置 pattern 尺寸和位置
+                            pattern
+                                .attr("width", width)
+                                .attr("height", height)
+                                .attr("patternTransform", `translate(${topLeft[0]}, ${topLeft[1]})`);
+
+                            var lineSpacing = 20;  // 线条间隔
+
+                            // 绘制线条以填充整个图案
+                            for (var y = 0; y <= height; y += lineSpacing) {
+                                pattern.append("path")
+                                    .attr("d", `M0,${y}L${width},${y}`)
+                                    .attr("transform", `rotate(${Gridangle}, ${width / 2}, ${height / 2})`)
+                                    .style("stroke", "black")
+                                    .style("stroke-width", 1);
+                            }
+
+                            for (var x = 0; x <= width; x += lineSpacing) {
+                                pattern.append("path")
+                                    .attr("d", `M${x},0L${x},${height}`)
+                                    .attr("transform", `rotate(${-Gridangle}, ${width / 2}, ${height / 2})`)
+                                    .style("stroke", "black")
+                                    .style("stroke-width", 1);
+                            }
+                        }
+                    }
+                });
+        }
+
+
+        // 监听滑动条的值变化
+        document.getElementById("GridAngleRotation").addEventListener("input", function () {
+            // 获取滑动条的当前值
+            var currentAngle = parseInt(this.value);
+
+            // 更新 pattern 中的线条旋转
+            updatePatternLines(currentAngle);
+        });
+
+
+        // ProvinceList UL element
+        var provinceList = d3.select("#provinceList ul");
+        // Create a list of provinces
+        provinceNames.forEach(function (provinceName) {
+            var li = provinceList.append("li")
+                .attr("data-value", provinceName)
+                .on("click", function () {
+                    // 取消之前选中的项的选中状态，并选中当前点击的项
+                    provinceList.selectAll("li").classed("selected", false);
+                    d3.select(this).classed("selected", true);
+                    selectedProvince = d3.select(this).attr("data-value");
+                    console.log("SelectedProvince is " + selectedProvince);
+                    updateSVGPattern(selectedProvince); // 根据选中的省份更新图案
+                    updateProvinceStroke(selectedProvince); // 根据选中的省份更新边框宽度
+                    updateProvincePattern(); // 重新定义图案
+                    // Optional: Update other UI elements or visualizations as needed
+                });
+
+            // 创建一个新的div包装省份名称和SVG
+            var wrapper = li.append("div")
+                .style("display", "flex")
+                .style("align-items", "center");
+
+            // 在每个列表项旁边创建一个SVG容器来显示图案
+            let svgPatternContainer = wrapper.append("svg")
+                .attr("width", 30)
+                .attr("height", 30)
+                .append("rect")
+                .attr("width", 30)
+                .attr("height", 30)
+                .style("fill", `url(#${getPatternIdByProvince(provinceName)})`); // 初始化时应用正确的图案
+
+            // 添加省份名称
+            wrapper.append("span")
+                .text(provinceName)
+                .style("margin-left", "10px");
+        });
+
+        // 更新SVG图案的函数
+        function updateSVGPattern(provinceName) {
+            // 找到对应的 SVG 元素并更新它的填充图案
+            var li = provinceList.selectAll("li").filter(function () {
+                return d3.select(this).attr("data-value") === provinceName;
+            });
+            li.select("svg rect").style("fill", `url(#${getPatternIdByProvince(provinceName)})`);
+        }
+
+        // 根据省份名称获取对应的图案 ID
+        function getPatternIdByProvince(provinceName) {
+            return provinceName.toLowerCase().replace(/ /g, "_") + "-pattern";
+        }
+
+        // Function: Update the SelectedProvince text display
+        function updateSelectedProvinceText() {
+            var textContainer = document.querySelector("#selected-province-text strong");
+            textContainer.textContent = selectedProvince === null ? "Null" : selectedProvince;
+
+            console.log("Currently selected province: " + selectedProvince);
+        }
+        // First Update Text
+        updateSelectedProvinceText();
+
+
+        // 假设省份边框默认宽度在此定义
+        const defaultStrokeWidth = "1"; // 默认边框宽度
+        const defaultStrokeColor = "rgba(31, 30, 30, 0.209)"; // 默认边框颜色
+        const selectedStrokeColor = "red"; // 选中边框颜色
+        const selectedStrokeWidth = "2"; // 选中边框宽度
+
+        function updateProvinceStroke() {
+            if (!selectedProvince) return; // 如果没有选中任何省份，退出函数
+
+            svg.selectAll(".provinces path").each(function (d) {
+                // 使用 D3 的选择方法来更新样式
+                var path = d3.select(this);
+                if (d.properties.engName === selectedProvince) {
+                    // 为当前选中的省份设置边框颜色和宽度
+                    path.style("stroke", selectedStrokeColor)
+                        .style("stroke-width", selectedStrokeWidth);
+                } else if (d.properties.engName === previouslySelectedProvince) {
+                    // 重置之前选中省份的边框样式
+                    path.style("stroke", defaultStrokeColor)
+                        .style("stroke-width", defaultStrokeWidth);
+                }
+            });
+
+            // 更新上一个选中省份的记录
+            previouslySelectedProvince = selectedProvince;
+        }
+        // 清除选项
+        $("#clearChoice").on("click", function () {
+            // 取消所有模式单选按钮的选择状态
+            $("input[name='ThreePattern']").prop("checked", false);
+
+            // 清除所有选中的列表项
+            $("#provinceList li").removeClass("selected");
+
+            // 清除所选省份的显示文本
+            selectedProvince = null;
+            updateSelectedProvinceText();
+
+            // 取消选中省份的描边样式
+            svg.selectAll(".provinces path").each(function (d) {
+                d3.select(this)
+                    .style("stroke", "rgba(31, 30, 30, 0.209)")
+                    .style("stroke-width", `${ProvinceStrokeWidth}`);
+            })
+        });
+
+
+
+        // 更新省份模式
+        function updateProvincePattern() {
+
+
+        }
+
+
+        // 更新省份模式
+        d3.selectAll("input[name='ThreePattern'], input[name='primitivePattern']").on("change", function () {
+            // 获取当前选中的纹理ID
+            var patternValue = d3.select(this).property("value");
+
+            // 在控制台中显示选中的纹理ID
+            console.log("Selected pattern is " + patternValue);
+            // 如果选中的纹理ID为 "circle"，则调用 changePatternAfterDraw 函数
+            selectedPattern = patternValue;
+
+            changePatternAfterDraw();
+
+
+        });
+
+
+
+        //primitive按钮隐藏显示
+        $(document).ready(function () {
+            // Show or hide options based on the selected pattern
+            $("input[name='ThreePattern']").change(function () {
+                var selectedPattern = $("input[name='ThreePattern']:checked").val();
+
+                // Hide all initially
+                $("#AfterSelectedPattern-options").hide();
+                $("#dot-options").hide();
+                $("#grid-options").hide();
+
+                // Conditionally display the relevant options
+                if (selectedPattern === 'dot') {
+                    $("#AfterSelectedPattern-options").show();
+                    $("#dot-options").show();
+                } else if (selectedPattern === 'grid') {
+                    $("#AfterSelectedPattern-options").show();
+                    $("#grid-options").show();
+                }
+            });
+        });
+        function drawMap(data, mode, callback) {
+            svg.selectAll(".provinces").remove();
+
+            var provinces = svg.append("g")
+                .attr("class", "provinces")
+                .selectAll("path")
+                .data(data)
+                .enter()
+                .append("path")
+                .attr("d", path)
+                .attr('stroke-linejoin', 'round');
+
+            if (mode === "color") {
+                provinces.style("fill", function () {
+                    return "hsl(" + Math.random() * 360 + ",100%,50%)";
+                });
+            } else if (mode === "pattern") {
+                definePatterns(svg);
+                provinces.style("fill", function (d) {
+                    var provinceName = d.properties.engName;
+                    var patternId = provinceName.toLowerCase().replace(/ /g, "_") + "-pattern";
+                    return `url(#${patternId})`;
+                });
+            }
+
+            changePatternAfterDraw();
+        }
+        // 在 drawMap 方法内部调用 changePattern
+        function changePatternAfterDraw() {
+            // 如果选中的纹理ID为 "circle"，则调用 changePatternAfterDraw 函数
+            if (selectedPattern === "dot") {
+                changePattern("#map svg", selectedProvince, "dot");
+            }
+            else if (selectedPattern === "line") {
+                changePattern("#map svg", selectedProvince, "line");
+            }
+            else if (selectedPattern === "grid") {
+                changePattern("#map svg", selectedProvince, "grid");
+            }
+            else if (selectedPattern === "circle") {
+                changePattern("#map svg", selectedProvince, "circle");
+            }
+        }
+
+        //Set the map size and projection
+        var w = 1080, h = 700;
+
+        var svg = d3.select("#map").append("svg")
+            .attr("width", w)
+            .attr("height", h);
+
+        var projection = d3.geoMercator()
+            .center([107, 38])
+            .scale(800)
+            .translate([w / 2, h / 2]);
+
+        var path = d3.geoPath().projection(projection);
+
+        // Load China provinces
+        d3.json("../json/china_topo_quantized.json").then(function (china) {
+            var chinaFeatures = topojson.feature(china, china.objects.provinces).features;
+            drawMap(chinaFeatures, "pattern"); // ColorMode by default
+
+            // document.getElementById("colorMode").addEventListener("click", function () {
+            //     drawMap(chinaFeatures, "color");
+            // });
+
+            // document.getElementById("patternMode").addEventListener("click", function () {
+            //     drawMap(chinaFeatures, "pattern");
+            // });
+
+
+        });
+    </script>
+
+</body>
+
+</html>
